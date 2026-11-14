@@ -43,6 +43,9 @@ jobs:
           rm -rf "backend-extensions/$PACKAGE_ID/.github"
           ln -s "../../backend-extensions/$PACKAGE_ID/frontend" "frontend/extensions/$PACKAGE_ID"
           ln -s "../../backend-extensions/$PACKAGE_ID/migrations" "database/extension-migrations/$PACKAGE_ID"
+          # Extensions import the panel's frontend deps without declaring them; the panel
+          # creates this same link when it installs an extension.
+          ln -s ../frontend/node_modules backend-extensions/node_modules
 
       - name: Read version
         id: version
