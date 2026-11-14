@@ -123,7 +123,7 @@ jobs:
       - name: Link extension into the panel tree
         run: |
           # The exporter bundles everything not covered by the extension's .gitignore.
-          rm -rf "backend-extensions/$PACKAGE_ID/.github"
+          rm -rf "backend-extensions/$PACKAGE_ID"/{.github,docs,README.md}
           ln -s "../../backend-extensions/$PACKAGE_ID/frontend" "frontend/extensions/$PACKAGE_ID"
           ln -s "../../backend-extensions/$PACKAGE_ID/migrations" "database/extension-migrations/$PACKAGE_ID"
 
