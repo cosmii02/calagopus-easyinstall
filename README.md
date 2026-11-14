@@ -8,7 +8,7 @@ Supported today:
 - **Minecraft: Bedrock Edition** (the official Bedrock Dedicated Server), with versions from Mojang and the [BDS-Versions](https://github.com/Bedrock-OSS/BDS-Versions) list.
 - **Hytale** (the official dedicated server), on the Release or Pre-release branch.
 
-![EasyInstall page: currently installed build with an update available, and the game / server type / mod loader / version picker](docs/screenshots/easyinstall.png)
+![EasyInstall page: an installed Bedrock server with an update available, and the game / server type / mod loader / version picker for Minecraft Java, Minecraft Bedrock and Hytale](docs/screenshots/easyinstall.png)
 
 ## Features
 
@@ -37,7 +37,7 @@ Each game is optional: only games with an egg configured are offered to users.
 2. In the panel, go to **Admin → Extensions** and upload it. The panel compiles it and restarts, usually within a minute or two.
 3. Open the extension's **Configure** page and pick the eggs for the games you want to offer.
 
-![Extension settings: picking the Minecraft egg](docs/screenshots/admin-settings.png)
+![Extension settings: picking the Java, Bedrock and Hytale eggs](docs/screenshots/admin-settings.png)
 
 To update, upload the new release's `.c7s.zip` the same way. Settings are kept.
 
