@@ -1,0 +1,3 @@
+package_name = "dev.cosmii02.easyinstall"
+name = "Easy Install"
+panel_version = ">=1.2.9"

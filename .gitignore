@@ -1,0 +1,31 @@
+# Dependencies / build output (the panel workspace builds this extension; nothing should land here)
+node_modules/
+frontend/node_modules/
+target/
+dist/
+frontend/dist/
+
+# Packaged releases (panel-rs extensions export)
+exported-extensions/
+*.c7s.zip
+
+# Rust: the lockfile belongs to the panel workspace, not the extension
+Cargo.lock
+**/*.rs.bk
+
+# Env / secrets
+.env
+.env.*
+
+# Logs
+*.log
+logs/
+
+# Editors / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+.DS_Store
+Thumbs.db

@@ -1,0 +1,11 @@
+[package]
+name = "dev_cosmii02_easyinstall"
+description = "Guided game server installer: pick a game, server type and version."
+authors = ["cosmii02"]
+version = "1.0.0"
+edition = { workspace = true }
+
+[dependencies]
+shared = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
