@@ -10,9 +10,17 @@ mod get {
     };
     use utoipa::ToSchema;
 
+    /// Which games have an egg configured, keyed like the frontend catalog.
+    #[derive(ToSchema, Serialize)]
+    struct Games {
+        minecraft: bool,
+        bedrock: bool,
+        hytale: bool,
+    }
+
     #[derive(ToSchema, Serialize)]
     struct Response {
-        configured: bool,
+        games: Games,
     }
 
     #[utoipa::path(get, path = "/", responses(
@@ -27,7 +35,11 @@ mod get {
         let ext: &crate::settings::ExtensionSettingsData = settings.find_extension_settings()?;
 
         ApiResponse::new_serialized(Response {
-            configured: ext.minecraft_egg_uuid.is_some(),
+            games: Games {
+                minecraft: ext.minecraft_egg_uuid.is_some(),
+                bedrock: ext.bedrock_egg_uuid.is_some(),
+                hytale: ext.hytale_egg_uuid.is_some(),
+            },
         })
         .ok()
     }

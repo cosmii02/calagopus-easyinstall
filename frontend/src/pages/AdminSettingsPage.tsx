@@ -19,7 +19,9 @@ export default function AdminSettingsPage() {
   const { addToast } = useToast();
 
   const [eggGroups, setEggGroups] = useState<EggGroup[]>([]);
-  const [eggUuid, setEggUuid] = useState<string | null>(null);
+  const [minecraftEggUuid, setMinecraftEggUuid] = useState<string | null>(null);
+  const [bedrockEggUuid, setBedrockEggUuid] = useState<string | null>(null);
+  const [hytaleEggUuid, setHytaleEggUuid] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -34,7 +36,9 @@ export default function AdminSettingsPage() {
               items: eggs.map((egg) => ({ value: egg.uuid, label: egg.name })),
             })),
         );
-        setEggUuid(settings.minecraftEggUuid);
+        setMinecraftEggUuid(settings.minecraftEggUuid);
+        setBedrockEggUuid(settings.bedrockEggUuid);
+        setHytaleEggUuid(settings.hytaleEggUuid);
       })
       .catch((err) => addToast(httpErrorToHuman(err), 'error'))
       .finally(() => setLoading(false));
@@ -42,7 +46,7 @@ export default function AdminSettingsPage() {
 
   const save = () => {
     setSaving(true);
-    updateSettings({ minecraftEggUuid: eggUuid })
+    updateSettings({ minecraftEggUuid, bedrockEggUuid, hytaleEggUuid })
       .then(() => addToast(tExt('admin.saved', {}), 'success'))
       .catch((err) => addToast(httpErrorToHuman(err), 'error'))
       .finally(() => setSaving(false));
@@ -51,12 +55,36 @@ export default function AdminSettingsPage() {
   return (
     <Stack>
       <Select
-        label={tExt('admin.eggLabel', {})}
-        description={tExt('admin.eggDescription', {})}
+        label={tExt('admin.minecraftEgg.label', {})}
+        description={tExt('admin.minecraftEgg.description', {})}
         placeholder={tExt('admin.eggPlaceholder', {})}
         data={eggGroups}
-        value={eggUuid}
-        onChange={setEggUuid}
+        value={minecraftEggUuid}
+        onChange={setMinecraftEggUuid}
+        disabled={loading}
+        searchable
+        allowDeselect
+        maw={480}
+      />
+      <Select
+        label={tExt('admin.bedrockEgg.label', {})}
+        description={tExt('admin.bedrockEgg.description', {})}
+        placeholder={tExt('admin.eggPlaceholder', {})}
+        data={eggGroups}
+        value={bedrockEggUuid}
+        onChange={setBedrockEggUuid}
+        disabled={loading}
+        searchable
+        allowDeselect
+        maw={480}
+      />
+      <Select
+        label={tExt('admin.hytaleEgg.label', {})}
+        description={tExt('admin.hytaleEgg.description', {})}
+        placeholder={tExt('admin.eggPlaceholder', {})}
+        data={eggGroups}
+        value={hytaleEggUuid}
+        onChange={setHytaleEggUuid}
         disabled={loading}
         searchable
         allowDeselect

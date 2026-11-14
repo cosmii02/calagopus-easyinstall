@@ -13,13 +13,16 @@ mod get {
     #[derive(ToSchema, Serialize)]
     struct Response {
         current: Option<crate::detect::Current>,
-        latest_build: Option<crate::mcjars::Build>,
-        /// The installed build is known and a newer build of the same version exists.
+        /// What *Update* would install.
+        latest: Option<crate::installer::UpdateTarget>,
+        /// The installed release is known and a newer one exists.
         update_available: bool,
-        /// Type and version are known, so the latest build can be (re)installed.
+        /// There is something to install: an update, or the latest release when the installed one is unknown.
         can_update: bool,
-        /// Newest release of the same server type, when it differs from the installed version.
+        /// Java only: newest release of the same server type, when it differs from the installed version.
         newer_version: Option<compact_str::CompactString>,
+        /// The server downloads updates by itself when it starts (Hytale), there is nothing to update here.
+        auto_updates: bool,
     }
 
     #[utoipa::path(get, path = "/", responses(
@@ -38,28 +41,32 @@ mod get {
 
         let mut response = Response {
             current: current.clone(),
-            latest_build: None,
+            latest: None,
             update_available: false,
             can_update: false,
             newer_version: None,
+            auto_updates: false,
         };
 
-        if let Some(current) = &current
-            && let Some(version) = &current.version
-        {
-            match crate::mcjars::latest_build(&state, &current.software, version).await {
-                Ok(latest) => {
-                    response.update_available = current
-                        .build
-                        .as_ref()
-                        .is_some_and(|build| build.id != latest.id);
-                    response.can_update = current.build.is_none() || response.update_available;
-                    response.latest_build = Some(latest);
+        if let Some(current) = &current {
+            response.auto_updates = crate::game::Game::from_software(&current.software)
+                == Some(crate::game::Game::Hytale);
+
+            match crate::installer::update_target(&state, current).await {
+                Ok(Some(target)) => {
+                    let installed = target.is_installed(current);
+                    response.update_available = current.is_exact() && !installed;
+                    response.can_update = !installed;
+                    response.latest = Some(target);
                 }
-                Err(err) => tracing::warn!("failed to fetch latest build from mcjars: {err:#}"),
+                Ok(None) => {}
+                Err(err) => tracing::warn!("failed to look up the latest release: {err:#}"),
             }
 
-            if let Ok(versions) = crate::mcjars::versions(&state, &current.software).await {
+            if crate::game::Game::from_software(&current.software) == Some(crate::game::Game::Java)
+                && let Some(version) = &current.version
+                && let Ok(versions) = crate::mcjars::versions(&state, &current.software).await
+            {
                 response.newer_version = versions
                     .first()
                     .map(|newest| newest.version.clone())

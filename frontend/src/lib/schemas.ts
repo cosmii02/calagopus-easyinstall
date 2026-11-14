@@ -1,12 +1,12 @@
 import { z } from 'zod';
 
 export const statusSchema = z.object({
-  configured: z.boolean(),
+  games: z.record(z.string(), z.boolean()),
 });
 
-export const mcVersionSchema = z.object({
+export const versionSchema = z.object({
   version: z.string(),
-  java: z.number(),
+  java: z.number().nullable(),
 });
 
 export const installSchema = z.object({
@@ -17,6 +17,8 @@ export const installSchema = z.object({
 
 export const settingsSchema = z.object({
   minecraftEggUuid: z.string().nullable(),
+  bedrockEggUuid: z.string().nullable(),
+  hytaleEggUuid: z.string().nullable(),
 });
 
 export const buildSchema = z.object({
@@ -33,11 +35,19 @@ export const currentSchema = z.object({
       software: z.string(),
       version: z.string().nullable(),
       build: buildSchema.nullable(),
-      source: z.enum(['detected', 'recorded', 'variables']),
+      installedVersion: z.string().nullable(),
+      source: z.enum(['detected', 'recorded', 'pinned', 'variables']),
     })
     .nullable(),
-  latestBuild: buildSchema.nullable(),
+  latest: z
+    .object({
+      version: z.string(),
+      name: z.string(),
+      build: buildSchema.nullable(),
+    })
+    .nullable(),
   updateAvailable: z.boolean(),
   canUpdate: z.boolean(),
   newerVersion: z.string().nullable(),
+  autoUpdates: z.boolean(),
 });

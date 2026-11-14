@@ -28,14 +28,23 @@ export default function CurrentInstallCard({ data }: { data: z.infer<typeof curr
   const updateServer = useServerStore((state) => state.updateServer);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const { current, latestBuild, updateAvailable, canUpdate, newerVersion } = data;
+  const { current, latest, updateAvailable, canUpdate, newerVersion, autoUpdates } = data;
   if (!current) return null;
 
-  const option = findBySoftware(current.software);
-  const name = tExt(`software.${current.software}` as Parameters<typeof tExt>[0], {} as never);
+  const td = (key: string) => tExt(key as Parameters<typeof tExt>[0], {} as never);
+  const match = findBySoftware(current.software, current.version);
+  const name = td(`software.${current.software}`);
+  const version = match?.versionKey ? td(match.versionKey) : current.version;
+  // A pinned version (Bedrock) already names the exact release, there is no separate build.
   const buildLabel = current.build
     ? tExt(`${PREFIX}.build`, { build: current.build.name })
-    : tExt(`${PREFIX}.buildUnknown`, {});
+    : current.installedVersion
+      ? current.installedVersion
+      : current.source === 'pinned'
+        ? null
+        : autoUpdates
+          ? tExt(`${PREFIX}.notDownloaded`, {})
+          : tExt(`${PREFIX}.buildUnknown`, {});
 
   const doUpdate = async () => {
     await update(server.uuid);
@@ -46,17 +55,19 @@ export default function CurrentInstallCard({ data }: { data: z.infer<typeof curr
 
   return (
     <TitleCard title={tExt(`${PREFIX}.title`, {})} icon={<FontAwesomeIcon icon={faCube} />}>
-      {latestBuild && (
+      {latest && (
         <ConfirmationModal
           opened={confirmOpen}
           onClose={() => setConfirmOpen(false)}
           title={tExt(`${PREFIX}.confirmTitle`, {})}
-          confirm={tExt(`${PREFIX}.update`, { build: latestBuild.name })}
+          confirm={tExt(`${PREFIX}.update`, { build: latest.name })}
           confirmColor='blue'
           onConfirmed={doUpdate}
         >
           <Text>
-            {tExt(`${PREFIX}.confirmBody`, { name, version: current.version ?? '', build: latestBuild.name })}
+            {latest.build
+              ? tExt(`${PREFIX}.confirmBody`, { name, version: current.version ?? '', build: latest.name })
+              : tExt(`${PREFIX}.confirmBodyVersion`, { name, version: latest.name })}
           </Text>
         </ConfirmationModal>
       )}
@@ -64,38 +75,41 @@ export default function CurrentInstallCard({ data }: { data: z.infer<typeof curr
       <Stack gap='sm'>
         <Group justify='space-between' wrap='nowrap' align='center'>
           <Group wrap='nowrap' gap='sm'>
-            <OptionIcon icon={option?.icon ?? faCube} image={option?.image} selected />
+            {/* Variants without artwork of their own (Hytale's branches) show the game's. */}
+            <OptionIcon icon={match?.option.icon ?? faCube} image={match?.option.image ?? match?.game.image} selected />
             <Stack gap={0}>
               <Text fw={600}>
-                {name} {current.version}{' '}
-                <Text span c='dimmed'>
-                  · {buildLabel}
-                </Text>
+                {name} {version}{' '}
+                {buildLabel && (
+                  <Text span c='dimmed'>
+                    · {buildLabel}
+                  </Text>
+                )}
               </Text>
               <Text size='sm' c='dimmed'>
-                {tExt(`${PREFIX}.source.${current.source}`, {})}
+                {autoUpdates ? tExt(`${PREFIX}.autoUpdates`, {}) : tExt(`${PREFIX}.source.${current.source}`, {})}
               </Text>
             </Stack>
           </Group>
 
           <Group gap='xs' wrap='nowrap'>
-            {updateAvailable && latestBuild ? (
+            {updateAvailable && latest ? (
               <Badge color='yellow' variant='light' leftSection={<FontAwesomeIcon icon={faCircleUp} />}>
-                {tExt(`${PREFIX}.updateAvailable`, { build: latestBuild.name })}
+                {tExt(`${PREFIX}.updateAvailable`, { build: latest.name })}
               </Badge>
             ) : (
-              current.build &&
+              (current.build || current.source === 'pinned') &&
               !canUpdate && (
                 <Badge color='green' variant='light' leftSection={<FontAwesomeIcon icon={faCircleCheck} />}>
                   {tExt(`${PREFIX}.upToDate`, {})}
                 </Badge>
               )
             )}
-            {canUpdate && latestBuild && (
+            {canUpdate && latest && (
               <Button leftSection={<FontAwesomeIcon icon={faArrowsRotate} />} onClick={() => setConfirmOpen(true)}>
                 {updateAvailable
-                  ? tExt(`${PREFIX}.update`, { build: latestBuild.name })
-                  : tExt(`${PREFIX}.reinstallLatest`, { build: latestBuild.name })}
+                  ? tExt(`${PREFIX}.update`, { build: latest.name })
+                  : tExt(`${PREFIX}.reinstallLatest`, { build: latest.name })}
               </Button>
             )}
           </Group>

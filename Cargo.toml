@@ -1,9 +1,9 @@
 [package]
 name = "dev_cosmii02_easyinstall"
-description = "Guided game server installer: pick a game, server type and version."
+description = "Guided game server installer for Minecraft Java, Minecraft Bedrock and Hytale."
 authors = ["cosmii02"]
 license = "MIT"
-version = "1.0.0"
+version = "1.0.1"
 edition = { workspace = true }
 
 [dependencies]

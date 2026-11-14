@@ -44,6 +44,8 @@ mod put {
     #[derive(ToSchema, Deserialize)]
     pub struct Payload {
         minecraft_egg_uuid: Option<uuid::Uuid>,
+        bedrock_egg_uuid: Option<uuid::Uuid>,
+        hytale_egg_uuid: Option<uuid::Uuid>,
     }
 
     #[derive(ToSchema, Serialize)]
@@ -61,26 +63,40 @@ mod put {
     ) -> ApiResponseResult {
         permissions.has_admin_permission("settings.update")?;
 
-        if let Some(egg_uuid) = data.minecraft_egg_uuid
-            && NestEgg::by_uuid_optional(&state.database, egg_uuid)
+        for egg_uuid in [
+            data.minecraft_egg_uuid,
+            data.bedrock_egg_uuid,
+            data.hytale_egg_uuid,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if NestEgg::by_uuid_optional(&state.database, egg_uuid)
                 .await?
                 .is_none()
-        {
-            return ApiResponse::error("egg not found")
-                .with_status(StatusCode::BAD_REQUEST)
-                .ok();
+            {
+                return ApiResponse::error("egg not found")
+                    .with_status(StatusCode::BAD_REQUEST)
+                    .ok();
+            }
         }
 
         let mut settings = state.settings.get_mut().await?;
         let ext: &mut crate::settings::ExtensionSettingsData =
             settings.find_mut_extension_settings()?;
         ext.minecraft_egg_uuid = data.minecraft_egg_uuid;
+        ext.bedrock_egg_uuid = data.bedrock_egg_uuid;
+        ext.hytale_egg_uuid = data.hytale_egg_uuid;
         settings.save().await?;
 
         activity_logger
             .log(
                 "easyinstall:settings.update",
-                serde_json::json!({ "minecraft_egg_uuid": data.minecraft_egg_uuid }),
+                serde_json::json!({
+                    "minecraft_egg_uuid": data.minecraft_egg_uuid,
+                    "bedrock_egg_uuid": data.bedrock_egg_uuid,
+                    "hytale_egg_uuid": data.hytale_egg_uuid,
+                }),
             )
             .await;
 

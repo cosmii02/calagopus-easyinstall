@@ -13,7 +13,7 @@ mod get {
 
     #[derive(ToSchema, Serialize)]
     struct Response {
-        versions: Vec<crate::mcjars::McVersion>,
+        versions: Vec<crate::game::Version>,
     }
 
     #[utoipa::path(get, path = "/", responses(
@@ -21,7 +21,7 @@ mod get {
         (status = BAD_REQUEST, body = ApiError),
     ), params(
         ("server" = uuid::Uuid, description = "The server ID"),
-        ("software" = String, description = "MCJars server type, e.g. PAPER"),
+        ("software" = String, description = "Server type: an MCJars type such as PAPER, or BEDROCK"),
     ))]
     pub async fn route(
         state: GetState,
@@ -30,17 +30,17 @@ mod get {
     ) -> ApiResponseResult {
         permissions.has_server_permission("settings.install")?;
 
-        if !crate::mcjars::SOFTWARE.contains(&software.as_str()) {
+        let Some(game) = crate::game::Game::from_software(&software) else {
             return ApiResponse::error("unsupported server type")
                 .with_status(StatusCode::BAD_REQUEST)
                 .ok();
-        }
+        };
 
-        let versions = match crate::mcjars::versions(&state, &software).await {
+        let versions = match crate::game::versions(&state, game, &software).await {
             Ok(versions) => versions,
             Err(err) => {
-                tracing::warn!(software, "failed to fetch versions from mcjars: {err:#}");
-                return ApiResponse::error("failed to fetch versions from MCJars")
+                tracing::warn!(software, "failed to fetch versions: {err:#}");
+                return ApiResponse::error("failed to fetch versions")
                     .with_status(StatusCode::BAD_GATEWAY)
                     .ok();
             }

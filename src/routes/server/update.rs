@@ -17,7 +17,8 @@ mod post {
     #[derive(ToSchema, Serialize)]
     struct Response {}
 
-    /// Reinstalls the newest build of the installed type and version. Never wipes files.
+    /// Reinstalls the newest build of the installed Java version, or the newest Bedrock version.
+    /// Never wipes files.
     #[utoipa::path(post, path = "/", responses(
         (status = ACCEPTED, body = inline(Response)),
         (status = BAD_REQUEST, body = ApiError),
@@ -39,29 +40,37 @@ mod post {
             )
             .ok();
         };
-        let Some(version) = current.version.as_deref() else {
-            return crate::installer::bad_request("the installed version is unknown").ok();
+        let target = match crate::installer::update_target(&state, &current).await {
+            Ok(Some(target)) => target,
+            Ok(None)
+                if crate::game::Game::from_software(&current.software)
+                    == Some(crate::game::Game::Hytale) =>
+            {
+                return crate::installer::bad_request(
+                    "this server downloads updates by itself when it starts",
+                )
+                .ok();
+            }
+            Ok(None) => {
+                return crate::installer::bad_request("the installed version is unknown").ok();
+            }
+            Err(err) => return crate::installer::upstream_error(err).ok(),
         };
+        if target.is_installed(&current) {
+            return crate::installer::bad_request("already on the latest release").ok();
+        }
 
-        let plan = match crate::installer::plan(&state, &current.software, version).await {
+        let plan = match crate::installer::plan(&state, &current.software, &target.version).await {
             Ok(plan) => plan,
             Err(response) => return response.ok(),
         };
-        if current
-            .build
-            .as_ref()
-            .is_some_and(|build| build.id == plan.build.id)
-        {
-            return crate::installer::bad_request("already on the latest build").ok();
-        }
-
-        let previous_build = current.build.map(|build| build.id);
 
         tokio::spawn(async move {
             crate::installer::apply(&state, &mut server, &plan, false).await?;
 
             let mut data = crate::installer::activity_data(&plan, false);
-            data["previous_build_id"] = serde_json::json!(previous_build);
+            data["previous_version"] = serde_json::json!(current.version);
+            data["previous_build_id"] = serde_json::json!(current.build.map(|build| build.id));
             activity_logger.log("server:easyinstall.update", data).await;
 
             ApiResponse::new_serialized(Response {})

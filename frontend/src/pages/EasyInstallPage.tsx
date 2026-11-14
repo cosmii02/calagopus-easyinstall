@@ -1,5 +1,11 @@
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
-import { faCheck, faCircleExclamation, faRotateLeft, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
+import {
+  faCheck,
+  faCircleExclamation,
+  faCircleInfo,
+  faRotateLeft,
+  faWandMagicSparkles,
+} from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Grid, SimpleGrid } from '@mantine/core';
 import { useEffect, useMemo, useState } from 'react';
@@ -28,7 +34,7 @@ import install from '../api/install.ts';
 import { games } from '../catalog.ts';
 import CurrentInstallCard from '../components/CurrentInstallCard.tsx';
 import OptionIcon from '../components/OptionIcon.tsx';
-import type { currentSchema, mcVersionSchema } from '../lib/schemas.ts';
+import type { currentSchema, versionSchema } from '../lib/schemas.ts';
 import { useExtTranslations } from '../translations.ts';
 
 const PREFIX = 'pages.server.easyInstall';
@@ -90,29 +96,33 @@ export default function EasyInstallPage() {
   const updateServer = useServerStore((state) => state.updateServer);
   const td = (key: string) => tExt(key as Parameters<typeof tExt>[0], {} as never);
 
-  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [configured, setConfigured] = useState<Record<string, boolean> | null>(null);
   const [current, setCurrent] = useState<z.infer<typeof currentSchema> | null>(null);
   const [gameId, setGameId] = useState<string | null>(null);
   const [variantId, setVariantId] = useState<string | null>(null);
   const [loaderId, setLoaderId] = useState<string | null>(null);
   const [version, setVersion] = useState<string | null>(null);
-  const [versions, setVersions] = useState<z.infer<typeof mcVersionSchema>[]>([]);
+  const [versions, setVersions] = useState<z.infer<typeof versionSchema>[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [versionsError, setVersionsError] = useState<string | null>(null);
   const [truncateDirectory, setTruncateDirectory] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const game = useMemo(() => games.find((g) => g.id === gameId) ?? null, [gameId]);
+  const availableGames = useMemo(() => games.filter((g) => configured?.[g.id]), [configured]);
+  const game = useMemo(() => availableGames.find((g) => g.id === gameId) ?? null, [availableGames, gameId]);
   const variant = useMemo(() => game?.variants.find((v) => v.id === variantId) ?? null, [game, variantId]);
   const needsLoader = !!variant?.loaders?.length;
   const loader = useMemo(() => variant?.loaders?.find((l) => l.id === loaderId) ?? null, [variant, loaderId]);
   const software = loader?.software ?? (needsLoader ? null : (variant?.software ?? null));
-  const selectedVersion = versions.find((v) => v.version === version) ?? null;
-  const complete = !!software && !!selectedVersion && configured === true;
+  const fixedVersion = needsLoader ? null : (variant?.version ?? null);
+  const selectedVersion = fixedVersion
+    ? { version: fixedVersion, java: null }
+    : (versions.find((v) => v.version === version) ?? null);
+  const complete = !!game && !!software && !!selectedVersion;
 
   useEffect(() => {
     getStatus(server.uuid)
-      .then((status) => setConfigured(status.configured))
+      .then((status) => setConfigured(status.games))
       .catch((err) => addToast(httpErrorToHuman(err), 'error'));
     getCurrent(server.uuid)
       .then(setCurrent)
@@ -123,7 +133,7 @@ export default function EasyInstallPage() {
     setVersion(null);
     setVersions([]);
     setVersionsError(null);
-    if (!software) return;
+    if (!software || fixedVersion) return;
 
     let cancelled = false;
     setVersionsLoading(true);
@@ -135,11 +145,12 @@ export default function EasyInstallPage() {
     return () => {
       cancelled = true;
     };
-  }, [server.uuid, software]);
+  }, [server.uuid, software, fixedVersion]);
 
   const selectGame = (id: string | null) => {
+    const variants = games.find((g) => g.id === id)?.variants ?? [];
     setGameId(id);
-    setVariantId(null);
+    setVariantId(variants.length === 1 ? variants[0].id : null);
     setLoaderId(null);
   };
   const selectVariant = (id: string) => {
@@ -164,7 +175,7 @@ export default function EasyInstallPage() {
     game && td(`games.${game.id}.name`),
     variant && td(`games.${game!.id}.variants.${variant.id}.name`),
     loader && td(`games.${game!.id}.loaders.${loader.id}.name`),
-    selectedVersion?.version,
+    !fixedVersion && selectedVersion?.version,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -193,7 +204,7 @@ export default function EasyInstallPage() {
         </Stack>
       </ConfirmationModal>
 
-      {configured === false && (
+      {configured && availableGames.length === 0 && (
         <Alert color='yellow' icon={<FontAwesomeIcon icon={faCircleExclamation} />} mb='md'>
           {tExt(`${PREFIX}.notConfigured`, {})}
         </Alert>
@@ -203,24 +214,29 @@ export default function EasyInstallPage() {
         <Grid.Col span={{ base: 12, lg: 8 }}>
           <Stack gap='md'>
             {current?.current && <CurrentInstallCard data={current} />}
-            <Step index={step++} title={tExt(`${PREFIX}.steps.game`, {})}>
-              <SimpleGrid cols={{ base: 1, sm: 2, xl: 3 }} role='radiogroup'>
-                {games.map((g) => (
-                  <OptionCard
-                    key={g.id}
-                    icon={g.icon}
-                    image={g.image}
-                    name={td(`games.${g.id}.name`)}
-                    description={td(`games.${g.id}.description`)}
-                    selected={g.id === gameId}
-                    onSelect={() => selectGame(g.id)}
-                  />
-                ))}
-              </SimpleGrid>
-            </Step>
+            {availableGames.length > 0 && (
+              <Step index={step++} title={tExt(`${PREFIX}.steps.game`, {})}>
+                <SimpleGrid cols={{ base: 1, sm: 2, xl: 3 }} role='radiogroup'>
+                  {availableGames.map((g) => (
+                    <OptionCard
+                      key={g.id}
+                      icon={g.icon}
+                      image={g.image}
+                      name={td(`games.${g.id}.name`)}
+                      description={td(`games.${g.id}.description`)}
+                      selected={g.id === gameId}
+                      onSelect={() => selectGame(g.id)}
+                    />
+                  ))}
+                </SimpleGrid>
+              </Step>
+            )}
 
             {game && (
-              <Step index={step++} title={tExt(`${PREFIX}.steps.variant`, {})}>
+              <Step
+                index={step++}
+                title={game.variantStep ? td(`games.${game.id}.variantStep`) : tExt(`${PREFIX}.steps.variant`, {})}
+              >
                 <SimpleGrid cols={{ base: 1, sm: 3 }} role='radiogroup'>
                   {game.variants.map((v) => (
                     <OptionCard
@@ -255,7 +271,7 @@ export default function EasyInstallPage() {
               </Step>
             )}
 
-            {game && software && (
+            {game && software && !fixedVersion && (
               <Step index={step++} title={tExt(`${PREFIX}.steps.version`, {})}>
                 <Select
                   label={tExt(`${PREFIX}.version.label`, {})}
@@ -274,7 +290,9 @@ export default function EasyInstallPage() {
                 />
                 {selectedVersion && (
                   <Text size='sm' c='dimmed' mt='xs'>
-                    {tExt(`${PREFIX}.version.java`, { java: selectedVersion.java })}
+                    {selectedVersion.java !== null
+                      ? tExt(`${PREFIX}.version.java`, { java: selectedVersion.java })
+                      : tExt(`${PREFIX}.version.bedrock`, {})}
                   </Text>
                 )}
               </Step>
@@ -294,12 +312,17 @@ export default function EasyInstallPage() {
                     <Badge>{td(`games.${game.id}.name`)}</Badge>
                     {variant && <Badge variant='light'>{td(`games.${game.id}.variants.${variant.id}.name`)}</Badge>}
                     {loader && <Badge variant='light'>{td(`games.${game.id}.loaders.${loader.id}.name`)}</Badge>}
-                    {selectedVersion && <Badge variant='outline'>{selectedVersion.version}</Badge>}
+                    {selectedVersion && !fixedVersion && <Badge variant='outline'>{selectedVersion.version}</Badge>}
                   </Group>
                 ) : (
                   <Text size='sm' c='dimmed'>
                     {tExt(`${PREFIX}.summary.empty`, {})}
                   </Text>
+                )}
+                {game?.note && (
+                  <Alert color='blue' icon={<FontAwesomeIcon icon={faCircleInfo} />}>
+                    {td(`games.${game.id}.note`)}
+                  </Alert>
                 )}
                 <Switch
                   label={tExt(`${PREFIX}.summary.wipe`, {})}

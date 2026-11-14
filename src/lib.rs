@@ -4,7 +4,10 @@ use shared::{
 };
 use std::sync::Arc;
 
+mod bedrock;
 mod detect;
+mod game;
+mod hytale;
 mod installer;
 mod mcjars;
 mod routes;
