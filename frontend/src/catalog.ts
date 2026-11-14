@@ -9,43 +9,56 @@ import {
   faScroll,
 } from '@fortawesome/free-solid-svg-icons';
 
-// Static concept data. Versions will come from MCJars once the backend is wired in.
+const MCJARS_ICONS = 'https://s3.mcjars.app/icons';
 
-export interface Loader {
+export interface Option {
   id: string;
-  icon: IconDefinition;
+  icon: IconDefinition; // fallback when there is no image or it fails to load
+  image?: string;
 }
 
-export interface Variant {
-  id: string;
-  icon: IconDefinition;
+export interface Loader extends Option {
+  software: string; // MCJars server type
+}
+
+export interface Variant extends Option {
+  software?: string; // MCJars server type, unset when a loader has to be picked
   loaders?: Loader[];
 }
 
-export interface Game {
-  id: string;
-  icon: IconDefinition;
+export interface Game extends Option {
   variants: Variant[];
-  versions: string[];
 }
 
 export const games: Game[] = [
   {
     id: 'minecraft',
     icon: faCube,
+    image: `${MCJARS_ICONS}/vanilla.png`,
     variants: [
-      { id: 'vanilla', icon: faLeaf },
-      { id: 'plugins', icon: faPuzzlePiece },
+      { id: 'vanilla', icon: faLeaf, image: `${MCJARS_ICONS}/vanilla.png`, software: 'VANILLA' },
+      { id: 'plugins', icon: faPuzzlePiece, image: `${MCJARS_ICONS}/paper.png`, software: 'PAPER' },
       {
         id: 'modded',
         icon: faHammer,
         loaders: [
-          { id: 'forge', icon: faFire },
-          { id: 'neoforge', icon: faFireFlameCurved },
-          { id: 'fabric', icon: faScroll },
+          { id: 'forge', icon: faFire, image: `${MCJARS_ICONS}/forge.png`, software: 'FORGE' },
+          { id: 'neoforge', icon: faFireFlameCurved, image: `${MCJARS_ICONS}/neoforge.png`, software: 'NEOFORGE' },
+          { id: 'fabric', icon: faScroll, image: `${MCJARS_ICONS}/fabric.png`, software: 'FABRIC' },
         ],
       },
     ],
-    versions: ['26.3', '26.2', '26.1.2', '26.1.1', '26.1', '1.21.11', '1.21.10', '1.21.9'],
   },
 ];
+
+/** The catalog option (variant or loader) that installs this MCJars server type. */
+export function findBySoftware(software: string): Option | null {
+  for (const game of games) {
+    for (const variant of game.variants) {
+      if (variant.software === software) return variant;
+      const loader = variant.loaders?.find((l) => l.software === software);
+      if (loader) return loader;
+    }
+  }
+  return null;
+}

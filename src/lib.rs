@@ -1,11 +1,43 @@
-use shared::{State, extensions::Extension};
+use shared::{
+    State,
+    extensions::{Extension, ExtensionRouteBuilder},
+};
+use std::sync::Arc;
+
+mod detect;
+mod installer;
+mod mcjars;
+mod routes;
+mod settings;
+
+pub const PACKAGE_NAME: &str = "dev.cosmii02.easyinstall";
 
 #[derive(Default)]
 pub struct ExtensionStruct;
 
 #[async_trait::async_trait]
 impl Extension for ExtensionStruct {
-    async fn initialize(&mut self, _state: State) {
-        tracing::info!("easyinstall extension initialized");
+    async fn settings_deserializer(
+        &self,
+        _state: State,
+    ) -> shared::extensions::settings::ExtensionSettingsDeserializer {
+        Arc::new(settings::ExtensionSettingsDataDeserializer)
+    }
+
+    async fn initialize_router(
+        &mut self,
+        state: State,
+        builder: ExtensionRouteBuilder,
+    ) -> ExtensionRouteBuilder {
+        builder
+            .add_admin_api_router(|routes| {
+                routes.nest(
+                    "/extensions/dev.cosmii02.easyinstall",
+                    routes::admin::router(&state),
+                )
+            })
+            .add_client_server_api_router(|routes| {
+                routes.nest("/easyinstall", routes::server::router(&state))
+            })
     }
 }

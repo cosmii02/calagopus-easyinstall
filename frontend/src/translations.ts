@@ -18,16 +18,64 @@ const translations = defineTranslations({
             label: 'Game version',
             placeholder: 'Select a version',
             latest: 'latest',
+            java: 'Runs on Java {java}.',
           },
           summary: {
             title: 'Summary',
             empty: 'Make your selections to see what will be installed.',
             install: 'Install',
-            notWired: 'Installing is not wired up yet, this is a UI preview.',
             reset: 'Start over',
+            wipe: 'Wipe existing files',
+            wipeDescription: 'Delete everything on the server before installing, including worlds.',
+          },
+          confirm: {
+            title: 'Confirm install',
+            body: 'This server will be reinstalled with {selection}.',
+            details:
+              'Its egg, startup command and Java image are switched to match, then the install runs. The server is stopped during the install.',
+            wipeWarning: 'All existing files on this server will be permanently deleted, including worlds and configs.',
+          },
+          current: {
+            title: 'Currently installed',
+            build: 'build {build}',
+            buildUnknown: 'unknown build',
+            source: {
+              detected: 'Identified from server.jar.',
+              recorded: 'Last installed by EasyInstall.',
+              variables: 'The exact build could not be identified.',
+            },
+            upToDate: 'Up to date',
+            updateAvailable: 'Update available: {build}',
+            update: 'Update to {build}',
+            reinstallLatest: 'Install latest build ({build})',
+            newerVersion:
+              'Minecraft {version} is available. Pick it below to upgrade, and take a backup first: version upgrades can break worlds and plugins.',
+            confirmTitle: 'Update server',
+            confirmBody: '{name} {version} will be reinstalled with build {build}. Files, worlds and configs are kept.',
+            toast: 'Updating, follow the progress in the console.',
+          },
+          notConfigured:
+            'EasyInstall has not been set up yet. An administrator needs to pick the Minecraft egg in the extension settings.',
+          toast: {
+            installing: 'Installing, follow the progress in the console.',
           },
         },
       },
+    },
+    admin: {
+      eggLabel: 'Minecraft egg',
+      eggDescription:
+        'Servers are switched to this egg when installing Minecraft. It needs SOFTWARE, VERSION and BUILD variables and "Java N" docker images, like the MCJars egg.',
+      eggPlaceholder: 'Select an egg',
+      save: 'Save',
+      saved: 'EasyInstall settings saved.',
+    },
+    software: {
+      VANILLA: 'Vanilla',
+      PAPER: 'Paper',
+      FORGE: 'Forge',
+      NEOFORGE: 'NeoForge',
+      FABRIC: 'Fabric',
     },
     games: {
       minecraft: {

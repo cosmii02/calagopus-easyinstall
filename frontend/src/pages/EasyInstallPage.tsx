@@ -1,31 +1,48 @@
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
-import { faCheck, faRotateLeft, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
+import { faCheck, faCircleExclamation, faRotateLeft, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Grid, SimpleGrid, ThemeIcon } from '@mantine/core';
-import { useMemo, useState } from 'react';
+import { Grid, SimpleGrid } from '@mantine/core';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router';
+import type { z } from 'zod';
+import { httpErrorToHuman } from '@/api/axios.ts';
 import Button from '@/elements/buttons/Button.tsx';
 import ServerContentContainer from '@/elements/containers/ServerContentContainer.tsx';
 import Badge from '@/elements/data-display/Badge.tsx';
 import Card from '@/elements/data-display/Card.tsx';
 import TitleCard from '@/elements/data-display/TitleCard.tsx';
+import Alert from '@/elements/feedback/Alert.tsx';
+import Spinner from '@/elements/feedback/Spinner.tsx';
 import Select from '@/elements/input/Select.tsx';
+import Switch from '@/elements/input/Switch.tsx';
 import Group from '@/elements/layout/Group.tsx';
 import Stack from '@/elements/layout/Stack.tsx';
+import ConfirmationModal from '@/elements/modals/ConfirmationModal.tsx';
 import Text from '@/elements/typography/Text.tsx';
 import { useToast } from '@/providers/ToastProvider.tsx';
+import { useServerStore } from '@/stores/server.ts';
+import getCurrent from '../api/getCurrent.ts';
+import getStatus from '../api/getStatus.ts';
+import getVersions from '../api/getVersions.ts';
+import install from '../api/install.ts';
 import { games } from '../catalog.ts';
+import CurrentInstallCard from '../components/CurrentInstallCard.tsx';
+import OptionIcon from '../components/OptionIcon.tsx';
+import type { currentSchema, mcVersionSchema } from '../lib/schemas.ts';
 import { useExtTranslations } from '../translations.ts';
 
 const PREFIX = 'pages.server.easyInstall';
 
 function OptionCard({
   icon,
+  image,
   name,
   description,
   selected,
   onSelect,
 }: {
   icon: IconDefinition;
+  image?: string;
   name: string;
   description: string;
   selected: boolean;
@@ -42,9 +59,7 @@ function OptionCard({
       style={selected ? { borderColor: 'var(--mantine-primary-color-filled)' } : undefined}
     >
       <Group wrap='nowrap' align='flex-start'>
-        <ThemeIcon size='lg' radius='md' variant={selected ? 'filled' : 'light'}>
-          <FontAwesomeIcon icon={icon} />
-        </ThemeIcon>
+        <OptionIcon icon={icon} image={image} selected={selected} />
         <Stack gap={2} className='flex-1 min-w-0'>
           <Group justify='space-between' wrap='nowrap'>
             <Text fw={600}>{name}</Text>
@@ -70,45 +85,131 @@ function Step({ index, title, children }: { index: number; title: string; childr
 export default function EasyInstallPage() {
   const { t: tExt } = useExtTranslations();
   const { addToast } = useToast();
-  const td = (key: string) => tExt(key as Parameters<typeof tExt>[0], {});
+  const navigate = useNavigate();
+  const server = useServerStore((state) => state.server);
+  const updateServer = useServerStore((state) => state.updateServer);
+  const td = (key: string) => tExt(key as Parameters<typeof tExt>[0], {} as never);
 
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [current, setCurrent] = useState<z.infer<typeof currentSchema> | null>(null);
   const [gameId, setGameId] = useState<string | null>(null);
   const [variantId, setVariantId] = useState<string | null>(null);
   const [loaderId, setLoaderId] = useState<string | null>(null);
   const [version, setVersion] = useState<string | null>(null);
+  const [versions, setVersions] = useState<z.infer<typeof mcVersionSchema>[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [versionsError, setVersionsError] = useState<string | null>(null);
+  const [truncateDirectory, setTruncateDirectory] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const game = useMemo(() => games.find((g) => g.id === gameId) ?? null, [gameId]);
   const variant = useMemo(() => game?.variants.find((v) => v.id === variantId) ?? null, [game, variantId]);
   const needsLoader = !!variant?.loaders?.length;
   const loader = useMemo(() => variant?.loaders?.find((l) => l.id === loaderId) ?? null, [variant, loaderId]);
-  const showVersion = !!variant && (!needsLoader || !!loader);
-  const complete = showVersion && !!version;
+  const software = loader?.software ?? (needsLoader ? null : (variant?.software ?? null));
+  const selectedVersion = versions.find((v) => v.version === version) ?? null;
+  const complete = !!software && !!selectedVersion && configured === true;
+
+  useEffect(() => {
+    getStatus(server.uuid)
+      .then((status) => setConfigured(status.configured))
+      .catch((err) => addToast(httpErrorToHuman(err), 'error'));
+    getCurrent(server.uuid)
+      .then(setCurrent)
+      .catch((err) => addToast(httpErrorToHuman(err), 'error'));
+  }, [server.uuid]);
+
+  useEffect(() => {
+    setVersion(null);
+    setVersions([]);
+    setVersionsError(null);
+    if (!software) return;
+
+    let cancelled = false;
+    setVersionsLoading(true);
+    getVersions(server.uuid, software)
+      .then((result) => !cancelled && setVersions(result))
+      .catch((err) => !cancelled && setVersionsError(httpErrorToHuman(err)))
+      .finally(() => !cancelled && setVersionsLoading(false));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [server.uuid, software]);
 
   const selectGame = (id: string | null) => {
     setGameId(id);
     setVariantId(null);
     setLoaderId(null);
-    setVersion(null);
   };
   const selectVariant = (id: string) => {
     setVariantId(id);
     setLoaderId(null);
   };
-  const reset = () => selectGame(null);
+  const reset = () => {
+    selectGame(null);
+    setTruncateDirectory(false);
+  };
+
+  const doInstall = async () => {
+    if (!software || !selectedVersion) return;
+
+    await install(server.uuid, { software, version: selectedVersion.version, truncateDirectory });
+    addToast(tExt(`${PREFIX}.toast.installing`, {}), 'success');
+    updateServer({ status: 'installing' });
+    navigate(`/server/${server.uuidShort}`);
+  };
+
+  const summaryName = [
+    game && td(`games.${game.id}.name`),
+    variant && td(`games.${game!.id}.variants.${variant.id}.name`),
+    loader && td(`games.${game!.id}.loaders.${loader.id}.name`),
+    selectedVersion?.version,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   let step = 1;
 
   return (
     <ServerContentContainer title={tExt(`${PREFIX}.title`, {})} subtitle={tExt(`${PREFIX}.subtitle`, {})}>
+      <ConfirmationModal
+        opened={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title={tExt(`${PREFIX}.confirm.title`, {})}
+        confirm={tExt(`${PREFIX}.summary.install`, {})}
+        onConfirmed={doInstall}
+      >
+        <Stack gap='xs'>
+          <Text>{tExt(`${PREFIX}.confirm.body`, { selection: summaryName })}</Text>
+          <Text size='sm' c='dimmed'>
+            {tExt(`${PREFIX}.confirm.details`, {})}
+          </Text>
+          {truncateDirectory && (
+            <Alert color='red' icon={<FontAwesomeIcon icon={faCircleExclamation} />}>
+              {tExt(`${PREFIX}.confirm.wipeWarning`, {})}
+            </Alert>
+          )}
+        </Stack>
+      </ConfirmationModal>
+
+      {configured === false && (
+        <Alert color='yellow' icon={<FontAwesomeIcon icon={faCircleExclamation} />} mb='md'>
+          {tExt(`${PREFIX}.notConfigured`, {})}
+        </Alert>
+      )}
+
       <Grid gap='md'>
         <Grid.Col span={{ base: 12, lg: 8 }}>
           <Stack gap='md'>
+            {current?.current && <CurrentInstallCard data={current} />}
             <Step index={step++} title={tExt(`${PREFIX}.steps.game`, {})}>
               <SimpleGrid cols={{ base: 1, sm: 2, xl: 3 }} role='radiogroup'>
                 {games.map((g) => (
                   <OptionCard
                     key={g.id}
                     icon={g.icon}
+                    image={g.image}
                     name={td(`games.${g.id}.name`)}
                     description={td(`games.${g.id}.description`)}
                     selected={g.id === gameId}
@@ -125,6 +226,7 @@ export default function EasyInstallPage() {
                     <OptionCard
                       key={v.id}
                       icon={v.icon}
+                      image={v.image}
                       name={td(`games.${game.id}.variants.${v.id}.name`)}
                       description={td(`games.${game.id}.variants.${v.id}.description`)}
                       selected={v.id === variantId}
@@ -142,6 +244,7 @@ export default function EasyInstallPage() {
                     <OptionCard
                       key={l.id}
                       icon={l.icon}
+                      image={l.image}
                       name={td(`games.${game.id}.loaders.${l.id}.name`)}
                       description={td(`games.${game.id}.loaders.${l.id}.description`)}
                       selected={l.id === loaderId}
@@ -152,20 +255,28 @@ export default function EasyInstallPage() {
               </Step>
             )}
 
-            {game && showVersion && (
+            {game && software && (
               <Step index={step++} title={tExt(`${PREFIX}.steps.version`, {})}>
                 <Select
                   label={tExt(`${PREFIX}.version.label`, {})}
                   placeholder={tExt(`${PREFIX}.version.placeholder`, {})}
-                  data={game.versions.map((v, i) => ({
-                    value: v,
-                    label: i === 0 ? `${v} (${tExt(`${PREFIX}.version.latest`, {})})` : v,
+                  data={versions.map((v, i) => ({
+                    value: v.version,
+                    label: `${v.version}${i === 0 ? ` (${tExt(`${PREFIX}.version.latest`, {})})` : ''}`,
                   }))}
                   value={version}
                   onChange={setVersion}
+                  disabled={versionsLoading || !!versionsError}
+                  rightSection={versionsLoading ? <Spinner size={16} /> : undefined}
+                  error={versionsError}
                   searchable
                   maw={320}
                 />
+                {selectedVersion && (
+                  <Text size='sm' c='dimmed' mt='xs'>
+                    {tExt(`${PREFIX}.version.java`, { java: selectedVersion.java })}
+                  </Text>
+                )}
               </Step>
             )}
           </Stack>
@@ -183,20 +294,24 @@ export default function EasyInstallPage() {
                     <Badge>{td(`games.${game.id}.name`)}</Badge>
                     {variant && <Badge variant='light'>{td(`games.${game.id}.variants.${variant.id}.name`)}</Badge>}
                     {loader && <Badge variant='light'>{td(`games.${game.id}.loaders.${loader.id}.name`)}</Badge>}
-                    {version && <Badge variant='outline'>{version}</Badge>}
+                    {selectedVersion && <Badge variant='outline'>{selectedVersion.version}</Badge>}
                   </Group>
                 ) : (
                   <Text size='sm' c='dimmed'>
                     {tExt(`${PREFIX}.summary.empty`, {})}
                   </Text>
                 )}
+                <Switch
+                  label={tExt(`${PREFIX}.summary.wipe`, {})}
+                  description={tExt(`${PREFIX}.summary.wipeDescription`, {})}
+                  checked={truncateDirectory}
+                  onChange={(e) => setTruncateDirectory(e.currentTarget.checked)}
+                />
                 <Group gap='xs'>
                   <Button
                     disabled={!complete}
                     leftSection={<FontAwesomeIcon icon={faWandMagicSparkles} />}
-                    onClick={() => {
-                      addToast(tExt(`${PREFIX}.summary.notWired`, {}), 'info');
-                    }}
+                    onClick={() => setConfirmOpen(true)}
                   >
                     {tExt(`${PREFIX}.summary.install`, {})}
                   </Button>

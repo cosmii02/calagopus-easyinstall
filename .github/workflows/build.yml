@@ -1,0 +1,127 @@
+name: Build
+
+# Every push/PR: lint, type-check and package the extension against a pinned panel release.
+# Push to main: if the version in Cargo.toml has no release yet, publish v<version> with the .c7s.zip.
+# So cutting a release = bumping `version` in Cargo.toml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  PANEL_REF: release-1.2.9
+  PACKAGE_NAME: dev.cosmii02.easyinstall
+  PACKAGE_ID: dev_cosmii02_easyinstall
+  SQLX_OFFLINE: "true"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        working-directory: panel
+    steps:
+      - name: Checkout panel
+        uses: actions/checkout@v4
+        with:
+          repository: calagopus/panel
+          ref: ${{ env.PANEL_REF }}
+          path: panel
+
+      - name: Checkout extension
+        uses: actions/checkout@v4
+        with:
+          path: panel/backend-extensions/${{ env.PACKAGE_ID }}
+
+      - name: Link extension into the panel tree
+        run: |
+          rm -rf "backend-extensions/$PACKAGE_ID/.github"
+          ln -s "../../backend-extensions/$PACKAGE_ID/frontend" "frontend/extensions/$PACKAGE_ID"
+          ln -s "../../backend-extensions/$PACKAGE_ID/migrations" "database/extension-migrations/$PACKAGE_ID"
+
+      - name: Read version
+        id: version
+        run: echo "version=$(grep -m1 '^version' "backend-extensions/$PACKAGE_ID/Cargo.toml" | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: panel/frontend/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: panel
+
+      - name: Install frontend dependencies
+        working-directory: panel/frontend
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Biome
+        working-directory: panel/frontend
+        run: pnpm exec biome check --css-parse-tailwind-directives=true "extensions/$PACKAGE_ID/src"
+
+      - name: Type-check frontend
+        working-directory: panel/frontend
+        run: pnpm typecheck
+
+      - name: Build frontend
+        working-directory: panel/frontend
+        run: pnpm build
+
+      - name: cargo fmt
+        run: cargo fmt -p "$PACKAGE_ID" -- --check
+
+      - name: cargo clippy
+        run: cargo clippy -p "$PACKAGE_ID" -- -D warnings
+
+      - name: Build panel CLI
+        run: cargo build -p panel-rs
+
+      - name: Export extension
+        run: target/debug/panel-rs extensions export "$PACKAGE_NAME"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_ID }}-${{ steps.version.outputs.version }}
+          path: panel/exported-extensions/${{ env.PACKAGE_ID }}.c7s.zip
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_ID }}-${{ needs.build.outputs.version }}
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: v${{ needs.build.outputs.version }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG already released, bump the version in Cargo.toml to publish a new one."
+            exit 0
+          fi
+          gh release create "$TAG" "$PACKAGE_ID.c7s.zip" \
+            --title "$TAG" \
+            --target "$GITHUB_SHA" \
+            --generate-notes
