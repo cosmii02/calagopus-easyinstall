@@ -140,7 +140,12 @@ jobs:
           gh release download "$PANEL_REF" -R calagopus/panel -p panel-rs-x86_64-linux -O "$RUNNER_TEMP/panel-rs"
           chmod +x "$RUNNER_TEMP/panel-rs"
 
+      # The CLI reads these at startup even for commands that never connect to anything.
       - name: Export extension
+        env:
+          APP_ENCRYPTION_KEY: ci-export-only
+          DATABASE_URL: postgresql://ci@localhost/ci
+          REDIS_URL: redis://localhost
         run: '"$RUNNER_TEMP/panel-rs" extensions export "$PACKAGE_NAME"'
 
       - uses: actions/upload-artifact@v7

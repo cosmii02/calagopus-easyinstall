@@ -9,6 +9,7 @@ mod installer;
 mod mcjars;
 mod routes;
 mod settings;
+mod updates;
 
 pub const PACKAGE_NAME: &str = "dev.cosmii02.easyinstall";
 
@@ -22,6 +23,14 @@ impl Extension for ExtensionStruct {
         _state: State,
     ) -> shared::extensions::settings::ExtensionSettingsDeserializer {
         Arc::new(settings::ExtensionSettingsDataDeserializer)
+    }
+
+    async fn check_for_updates(
+        &self,
+        state: State,
+        current_version: &semver::Version,
+    ) -> Result<Option<shared::extensions::ExtensionUpdateInfo>, anyhow::Error> {
+        updates::check(&state, current_version).await
     }
 
     async fn initialize_router(
