@@ -1,8 +1,10 @@
 name: Build
 
-# Every push/PR: lint, type-check and package the extension against a pinned panel release.
+# Every push/PR: lint and type-check the extension against a pinned panel release and package it.
 # Push to main: if the version in Cargo.toml has no release yet, publish v<version> with the .c7s.zip.
 # So cutting a release = bumping `version` in Cargo.toml.
+#
+# frontend, rust and package run in parallel; release waits for all three.
 
 on:
   push:
@@ -18,48 +20,71 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  frontend:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     defaults:
       run:
-        working-directory: panel
+        working-directory: panel/frontend
     steps:
       - name: Checkout panel
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: calagopus/panel
           ref: ${{ env.PANEL_REF }}
           path: panel
 
       - name: Checkout extension
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: panel/backend-extensions/${{ env.PACKAGE_ID }}
 
       - name: Link extension into the panel tree
+        working-directory: panel
         run: |
-          rm -rf "backend-extensions/$PACKAGE_ID/.github"
           ln -s "../../backend-extensions/$PACKAGE_ID/frontend" "frontend/extensions/$PACKAGE_ID"
-          ln -s "../../backend-extensions/$PACKAGE_ID/migrations" "database/extension-migrations/$PACKAGE_ID"
           # Extensions import the panel's frontend deps without declaring them; the panel
           # creates this same link when it installs an extension.
           ln -s ../frontend/node_modules backend-extensions/node_modules
 
-      - name: Read version
-        id: version
-        run: echo "version=$(grep -m1 '^version' "backend-extensions/$PACKAGE_ID/Cargo.toml" | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
-
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: panel/frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Biome
+        run: pnpm exec biome check --css-parse-tailwind-directives=true "extensions/$PACKAGE_ID/src"
+
+      - name: Type-check
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: panel
+    steps:
+      - name: Checkout panel
+        uses: actions/checkout@v7
+        with:
+          repository: calagopus/panel
+          ref: ${{ env.PANEL_REF }}
+          path: panel
+
+      - name: Checkout extension
+        uses: actions/checkout@v7
+        with:
+          path: panel/backend-extensions/${{ env.PACKAGE_ID }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -69,56 +94,77 @@ jobs:
         with:
           workspaces: panel
 
-      - name: Install frontend dependencies
-        working-directory: panel/frontend
-        run: pnpm install --no-frozen-lockfile
-
-      - name: Biome
-        working-directory: panel/frontend
-        run: pnpm exec biome check --css-parse-tailwind-directives=true "extensions/$PACKAGE_ID/src"
-
-      - name: Type-check frontend
-        working-directory: panel/frontend
-        run: pnpm typecheck
-
-      - name: Build frontend
-        working-directory: panel/frontend
-        run: pnpm build
-
       - name: cargo fmt
         run: cargo fmt -p "$PACKAGE_ID" -- --check
 
       - name: cargo clippy
         run: cargo clippy -p "$PACKAGE_ID" -- -D warnings
 
-      - name: Build panel CLI
-        run: cargo build -p panel-rs
+  package:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        working-directory: panel
+    steps:
+      - name: Checkout panel
+        uses: actions/checkout@v7
+        with:
+          repository: calagopus/panel
+          ref: ${{ env.PANEL_REF }}
+          path: panel
+
+      - name: Checkout extension
+        uses: actions/checkout@v7
+        with:
+          path: panel/backend-extensions/${{ env.PACKAGE_ID }}
+
+      - name: Link extension into the panel tree
+        run: |
+          # The exporter bundles everything not covered by the extension's .gitignore.
+          rm -rf "backend-extensions/$PACKAGE_ID/.github"
+          ln -s "../../backend-extensions/$PACKAGE_ID/frontend" "frontend/extensions/$PACKAGE_ID"
+          ln -s "../../backend-extensions/$PACKAGE_ID/migrations" "database/extension-migrations/$PACKAGE_ID"
+
+      - name: Read version
+        id: version
+        run: echo "version=$(grep -m1 '^version' "backend-extensions/$PACKAGE_ID/Cargo.toml" | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+
+      # The official release binary of the same panel version; exporting only packages files,
+      # so there's no need to compile the panel.
+      - name: Download panel CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$PANEL_REF" -R calagopus/panel -p panel-rs-x86_64-linux -O "$RUNNER_TEMP/panel-rs"
+          chmod +x "$RUNNER_TEMP/panel-rs"
 
       - name: Export extension
-        run: target/debug/panel-rs extensions export "$PACKAGE_NAME"
+        run: '"$RUNNER_TEMP/panel-rs" extensions export "$PACKAGE_NAME"'
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.PACKAGE_ID }}-${{ steps.version.outputs.version }}
           path: panel/exported-extensions/${{ env.PACKAGE_ID }}.c7s.zip
           if-no-files-found: error
 
   release:
-    needs: build
+    needs: [frontend, rust, package]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
-          name: ${{ env.PACKAGE_ID }}-${{ needs.build.outputs.version }}
+          name: ${{ env.PACKAGE_ID }}-${{ needs.package.outputs.version }}
 
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: v${{ needs.build.outputs.version }}
+          TAG: v${{ needs.package.outputs.version }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "$TAG already released, bump the version in Cargo.toml to publish a new one."
